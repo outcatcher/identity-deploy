@@ -1,0 +1,9 @@
+clouds:
+  default:
+    auth:
+      auth_url: "http://{{ vm_address }}:5000/v3/"
+      username: "admin"
+      password: "{{ admin_pwd }}"
+      project_name: "admin"
+      domain_name: "Default"
+    region: "RegionOne"

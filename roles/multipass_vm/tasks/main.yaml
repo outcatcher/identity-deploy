@@ -1,0 +1,41 @@
+- name: Check multipass
+  shell: "multipass version"
+  changed_when: no
+
+- name: Create keypair dir
+  file:
+    path: "{{ build_dir }}"
+    state: directory
+
+- name: Generate keypair
+  community.crypto.openssh_keypair:
+    path: "{{ build_dir }}/{{ keypair_type }}"
+    type: "{{ keypair_type }}"
+  register: keypair_result
+
+- name: Write cloud-init template
+  vars:
+    multipass_vm_pub_key: "{{ keypair_result.public_key }}"
+  template:
+    src: "cloud-init.yaml"
+    dest: "{{ build_dir }}/cloud-init.yaml"
+  register: cloud_init
+
+- name: List multipass instances
+  shell: "multipass list"
+  changed_when: no
+  register: multipass_list
+
+- name: Create VM
+  shell: "multipass launch --name {{ vm_name }} --cloud-init {{ cloud_init.path }} {{ vm_release }}"
+  when: multipass_list.stdout is not search(vm_name)
+
+- name: Show instance details
+  shell: "multipass info {{ vm_name }}"
+  changed_when: no
+  register: multipass_info
+
+- name: Save VM facts
+  set_fact:
+    vm_address: "{{ multipass_info.stdout_lines[2] | regex_search('\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}') }}"
+    vm_private_key: "{{ keypair_result.filename }}"

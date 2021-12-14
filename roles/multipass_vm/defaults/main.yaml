@@ -1,0 +1,4 @@
+build_dir: build
+keypair_type: ed25519
+vm_name: keystone-vm
+vm_release: bionic
