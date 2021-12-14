@@ -1,6 +1,8 @@
 ---
 - name: "Setup VM"
   hosts: host
+  vars:
+    multipass_vm_username: keystone
   roles:
     - multipass_vm
   tasks:
@@ -9,10 +11,10 @@
         name: guest
         groups:
           - keystone_all
-        ansible_host: "{{ vm_address }}"
-        ansible_user: keystone
-        ansible_ssh_private_key_file: "{{ playbook_dir }}/{{ vm_private_key }}"
-        db_pwd: "Spacibo2022"
+        ansible_host: "{{ multipass_vm_address }}"
+        ansible_user: "{{ multipass_vm_username }}"
+        ansible_ssh_private_key_file: "{{ playbook_dir }}/{{ multipass_vm_private_key }}"
+        db_pwd: "{{ lookup('password', 'build/db_pwd chars=hexdigits', seed=inventory_hostname) }}"
       changed_when: no
 
 - name: "Install RabbitMQ"
@@ -79,9 +81,10 @@
     - name: "Generate admin password"
       set_fact:
         admin_pwd: "{{ lookup('password', 'build/admin_pwd', seed=inventory_hostname) }}"
+    - name: Save VM address to 'guest' host
+      set_fact:
+        vm_address: "{{ hostvars['host']['multipass_vm_address'] }}"
     - name: "Create clouds.yaml for post-install configuration"
-      vars:
-        vm_address: "{{ hostvars['host']['vm_address'] }}"
       template:
         src: "clouds.yaml"
         dest: "~/.config/openstack/clouds.yaml"
@@ -90,8 +93,8 @@
   hosts: guest
   become: yes
   vars:
-    internal_lb_vip_address: "{{ hostvars['host']['vm_address'] }}"
-    external_lb_vip_address: "{{ hostvars['host']['vm_address'] }}"
+    internal_lb_vip_address: "{{ vm_address }}"
+    external_lb_vip_address: "{{ vm_address }}"
     keystone_memcached_servers: ""
     keystone_container_mysql_password: "{{ db_pwd }}"
     keystone_oslomsg_rpc_password: "{{ db_pwd }}"
