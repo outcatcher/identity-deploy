@@ -14,7 +14,7 @@
         ansible_host: "{{ multipass_vm_address }}"
         ansible_user: "{{ multipass_vm_username }}"
         ansible_ssh_private_key_file: "{{ playbook_dir }}/{{ multipass_vm_private_key }}"
-        db_pwd: "{{ lookup('password', 'build/db_pwd chars=hexdigits', seed=inventory_hostname) }}"
+        vm_address: "{{ multipass_vm_address }}"
       changed_when: no
 
 - name: "Install RabbitMQ"
@@ -26,6 +26,13 @@
   roles:
     - rockandska.erlang
     - geerlingguy.rabbitmq
+
+- name: "Generate passwords"
+  hosts: guest
+  tasks:
+    - set_fact:
+        db_pwd: "{{ lookup('password', 'build/db_pwd chars=hexdigits', seed=inventory_hostname) }}"
+        admin_pwd: "{{ lookup('password', 'build/admin_pwd', seed=inventory_hostname) }}"
 
 - name: "Prepare to install"
   hosts: guest
@@ -78,12 +85,6 @@
       file:
         path: "~/.config/openstack/"
         state: directory
-    - name: "Generate admin password"
-      set_fact:
-        admin_pwd: "{{ lookup('password', 'build/admin_pwd', seed=inventory_hostname) }}"
-    - name: Save VM address to 'guest' host
-      set_fact:
-        vm_address: "{{ hostvars['host']['multipass_vm_address'] }}"
     - name: "Create clouds.yaml for post-install configuration"
       template:
         src: "clouds.yaml"
