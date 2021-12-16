@@ -1,16 +1,33 @@
 ---
-- import_playbook: multipass.yaml
+- name: "Prepare common configuration"
+  hosts: host
+  tasks:
+    - name: Create keypair dir
+      file:
+        path: "{{ build_dir }}"
+        state: directory
+    - name: Generate keypair
+      vars:
+        keypair_type: ed25519
+      community.crypto.openssh_keypair:
+        path: "{{ build_dir }}/id_{{ keypair_type }}"
+        type: "{{ keypair_type }}"
+      register: keypair_result
+    - name: Save keys to host vars
+      set_fact:
+        vm_public_key: "{{ keypair_result.public_key }}"
+        vm_private_key_file: "{{ playbook_dir }}/{{ keypair_result.filename }}"
+
+- import_playbook: create-multipass.yaml
   when: provider == "multipass"
 
-- name: "Install RabbitMQ"
+- name: "Wait for ssh to be available"
   hosts: guest
-  become: yes
-  vars:
-    erlang_series: 24
-    rabbitmq_version: 3.9.11
-  roles:
-    - rockandska.erlang
-    - geerlingguy.rabbitmq
+  gather_facts: no
+  tasks:
+    - name: Wait for SSH available
+      wait_for_connection:
+        timeout: 60
 
 - name: "Generate passwords"
   hosts: guest
@@ -18,22 +35,28 @@
     - set_fact:
         db_pwd: "{{ lookup('password', 'build/db_pwd chars=hexdigits', seed=inventory_hostname) }}"
         admin_pwd: "{{ lookup('password', 'build/admin_pwd', seed=inventory_hostname) }}"
+      no_log: true
 
 - name: "Prepare to install"
   hosts: guest
   become: yes
   tasks:
-    - name: "Uninstall not needed packages"
+    - name: "Uninstall unused packages"
       apt:
         pkg:
+          - cloud-init
           - python3-yaml
         state: absent
+        force: yes
+        purge: yes
         autoremove: yes
     - name: "Install packages"
       apt:
         pkg:
           - python3-pip
           - mysql-server
+        state: latest
+        autoremove: yes
         update_cache: yes
         cache_valid_time: 1200
     - name: "Upgrade PIP"
@@ -47,6 +70,7 @@
           - openstacksdk
           - virtualenv
           - pymysql
+        state: latest
     - name: "Create cgi-bin"
       file:
         path: "/var/www/cgi-bin/keystone"
@@ -57,7 +81,7 @@
         state: directory
     - name: "Prepare keystone key pair"
       community.crypto.openssh_keypair:
-        path: "/home/keystone/.ssh/id_rsa"
+        path: "/home/{{ vm_username }}/.ssh/id_rsa"
         type: "rsa"
     - name: "Create .my.cnf"
       copy:
@@ -65,7 +89,7 @@
         dest: "{{ item }}/.my.cnf"
       loop:
         - "/root"
-        - "/home/keystone"
+        - "/home/{{ vm_username }}"
     - name: "Create openstack config dir"
       file:
         path: "~/.config/openstack/"
@@ -74,6 +98,16 @@
       template:
         src: "clouds.yaml"
         dest: "~/.config/openstack/clouds.yaml"
+
+- name: "Install RabbitMQ"
+  hosts: guest
+  become: yes
+  vars:
+    erlang_series: 24
+    rabbitmq_version: 3.9.11
+  roles:
+    - rockandska.erlang
+    - geerlingguy.rabbitmq
 
 - name: "Ubuntu install"
   hosts: guest
@@ -96,6 +130,4 @@
     login_user_domain_name: "Default"
   roles:
     - openstack.config_template
-    - name: os_keystone
-      tags:
-        - keystone-install
+    - os_keystone
